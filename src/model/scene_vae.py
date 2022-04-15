@@ -31,8 +31,6 @@ class MultiPairedDspritesVAE(pl.LightningModule):
                             help="object level placeholders")
         parser.add_argument("--hd_features", type=bool, default=True,
                             help="feature level placeholders")
-        parser.add_argument("--kld_coef", type=float, default=0.001,
-                            help="kl loss part coefficient")
         parser.add_argument("--encoder_state_dict", type=str,
                             default='/home/yessense/PycharmProjects/Multi-paired-dsprites/src/model/saved_states'
                                     '/encoder_state_dict.pt')
@@ -46,7 +44,6 @@ class MultiPairedDspritesVAE(pl.LightningModule):
                  hd_features: bool = False,
                  feature_names: Optional[List] = None,
                  obj_names: Optional[List] = None,
-                 kld_coef: float = 1.0,
                  encoder_state_dict: Optional[str] = '',
                  **kwargs):
         super().__init__()
@@ -55,7 +52,6 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         self.latent_dim = latent_dim
         self.n_features = n_features
         self.lr = lr
-        self.kld_coef = kld_coef
 
         self.encoder = Encoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
         if encoder_state_dict is not None and len(encoder_state_dict):
