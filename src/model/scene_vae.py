@@ -32,8 +32,7 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         parser.add_argument("--hd_features", type=bool, default=True,
                             help="feature level placeholders")
         parser.add_argument("--encoder_state_dict", type=str,
-                            default='/home/yessense/PycharmProjects/Multi-paired-dsprites/src/model/saved_states'
-                                    '/encoder_state_dict.pt')
+                            default='model/saved_states/encoder_state_dict.pt')
         return parent_parser
 
     def __init__(self, image_size: Tuple[int, int, int] = (1, 64, 64),
@@ -54,11 +53,14 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         self.lr = lr
 
         self.encoder = Encoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
-        if encoder_state_dict is not None and len(encoder_state_dict):
-            state_dict = torch.load(encoder_state_dict)
-            self.encoder.load_state_dict(state_dict)
-            for parameter in self.encoder.parameters():
-                parameter.requires_grad = False
+
+        if encoder_state_dict is None or not len(encoder_state_dict):
+            raise NameError
+
+        state_dict = torch.load(encoder_state_dict)
+        self.encoder.load_state_dict(state_dict)
+        for parameter in self.encoder.parameters():
+            parameter.requires_grad = False
 
         self.decoder = Decoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
 
@@ -101,12 +103,15 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         else:
             return mu
 
-    def encode_features(self, image, placeholders=False):
+    def encode_image(self, image, placeholders=False):
         """Multiply img features on feature placeholders"""
         mu, log_var = self.encoder(image)
 
+        if self.training:
+            z = self.reparameterize(mu, log_var)
+        else:
+            z = mu
         # z -> (-1, 5,  1024)
-        z = self.reparameterize(mu, log_var)
         z = z.view(-1, 5, self.latent_dim)
 
         if placeholders:
@@ -114,20 +119,14 @@ class MultiPairedDspritesVAE(pl.LightningModule):
             mask = self.feature_placeholders.expand(z.size()).to(self.device)
             z = z * mask
 
-        if self.training:
-            return mu, log_var, z
-        else:
-            return z
+        return torch.sum(z, dim=1)
 
     def encode_scene(self, z1, z2):
         batch_size = z1.shape[0]
         masks = [mask.repeat(batch_size, 1).to(self.device) for mask in self.obj_placeholders]
 
-        # 0 or 1
-        choice = random.randint(0, 1)
-
-        z1 *= masks[choice]
-        z2 *= masks[not choice]
+        z1 *= masks[0]
+        z2 *= masks[1]
 
         scene = z1 + z2
 
@@ -135,71 +134,38 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
     def training_step(self, batch):
         """Function exchanges objects from scene1 to scene2"""
-        scene1, scene2, fist_obj, pair_obj, second_obj, exchange_label = batch
+        scene, img, pair_img = batch
 
         # Encode features
-        mu1, log_var1, feat_1 = self.encode_features(fist_obj, self.hd_features)
-        mu2, log_var2, feat_2 = self.encode_features(pair_obj, self.hd_features)
-        mu3, log_var3, z3 = self.encode_features(second_obj, self.hd_features)
-
-        # exchange labels -> (-1, 5, 1024)
-        exchange_label = exchange_label.expand(feat_1.size())
-
-        # z1 Восстанавливает 1 изображение
-        z1 = torch.where(exchange_label, feat_1, feat_2)
-        # z2 Восстанавливает 2 изображение изображение
-        z2 = torch.where(exchange_label, feat_2, feat_1)
-
-        # z1 -> first object -> (-1, 1024)
-        z1 = torch.sum(z1, dim=1)
-        # z2 -> pair object -> (-1, 1024)
-        z2 = torch.sum(z2, dim=1)
-        # z3 -> second object -> (-1, 1024)
-        z3 = torch.sum(z3, dim=1)
+        latent_img = self.encode_image(img, self.hd_features)
+        latent_pair_img = self.encode_image(pair_img, self.hd_features)
 
         # multiply by object number placeholders
-        scene1_latent = self.encode_scene(z1, z3)
-        scene2_latent = self.encode_scene(z2, z3)
+        scene_latent = self.encode_scene(latent_img, latent_pair_img)
 
-        r1 = self.decoder(scene1_latent)
-        r2 = self.decoder(scene2_latent)
+        reconstruct = self.decoder(scene_latent)
 
-        total, l1, l2 = self.loss_f(r1, r2, scene1, scene2)
-        iou1 = iou_pytorch(r1, scene1)
-        iou2 = iou_pytorch(r2, scene2)
-        iou = (iou1 + iou2) / 2
+        loss = self.loss_f(reconstruct, scene)
+        iou = iou_pytorch(reconstruct, scene)
 
         # log training process
-        self.log("Sum of losses", total, prog_bar=True)
-        self.log("BCE reconstruct 1, img 1", l1, prog_bar=False)
-        self.log("BCE reconstruct 2, img 2", l2, prog_bar=False)
+        self.log("BCE reconstruct", loss, prog_bar=True)
         self.log("IOU mean ", iou, prog_bar=True)
-        self.log("IOU reconstruct 1, img 1", iou1, prog_bar=False)
-        self.log("IOU reconstruct 2, img 2", iou2, prog_bar=False)
 
         if self.global_step % 499 == 0:
             self.logger.experiment.log({
                 "reconstruct/examples": [
-                    wandb.Image(scene1[0], caption='Scene 1'),
-                    wandb.Image(scene2[0], caption='Scene 2'),
-                    wandb.Image(r1[0], caption='Recon 1'),
-                    wandb.Image(r2[0], caption='Recon 2'),
-                    wandb.Image(fist_obj[0], caption='Image 1'),
-                    wandb.Image(pair_obj[0], caption='Pair to Image 1'),
-                    wandb.Image(second_obj[0], caption='Image 2')
+                    wandb.Image(scene[0], caption='Scene 1'),
+                    wandb.Image(reconstruct[0], caption='Recon 1'),
                 ]})
 
-        return total
+        return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         return optimizer
 
-    def loss_f(self, r1, r2, scene1, scene2):
-        loss = torch.nn.BCELoss(reduction='sum')
-
-        l1 = loss(r1, scene1)
-        l2 = loss(r2, scene2)
-
-        total_loss = l1 + l2
-        return total_loss, l1, l2
+    def loss_f(self, reconstruct, scene):
+        loss_func = torch.nn.BCELoss(reduction='sum')
+        loss = loss_func(reconstruct, scene)
+        return loss
