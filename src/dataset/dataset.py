@@ -61,36 +61,14 @@ class MultiDisDsprites(IterableDataset):
         idx = random.randint(0, self.dsprites_size - 1)
 
         img = self.imgs[idx]
-        label = self.labels[idx]
 
-        feature_type = random.randrange(0, 5)
-
-        exchange_labels = np.zeros_like(label, dtype=bool)
-        exchange_labels[feature_type] = True
-
-        other_feature = random.choice(self.features_range[feature_type])
-        while other_feature == label[feature_type]:
-            other_feature = random.choice(self.features_range[feature_type])
-            continue
-
-        other_label = label[:]
-        other_label[feature_type] = other_feature
-
-        pair_idx = self.get_element_pos(other_label)
-        pair_img = self.imgs[pair_idx]
-
-        # img = torch.from_numpy(img).float().unsqueeze(0)
-        # pair_img = torch.from_numpy(pair_img).float().unsqueeze(0)
-        # exchange_labels = torch.from_numpy(exchange_labels).unsqueeze(-1)
+        pair_img = self.generate_object(img)
 
         # img -> (1, 64, 64)
         img = np.expand_dims(img, 0)
         # pair_img ->(1, 64, 64)
         pair_img = np.expand_dims(pair_img, 0)
-        # exchange_labels -> (5, 1)
-        exchange_labels = np.expand_dims(exchange_labels, -1)
-
-        return img, pair_img, exchange_labels
+        return img, pair_img
 
     def generate_object(self, *scenes) -> ndarray:
         """Find object """
@@ -98,7 +76,7 @@ class MultiDisDsprites(IterableDataset):
         while True:
             # select random image
             n = random.randrange(0, self.dsprites_size)
-            obj = np.expand_dims(self.imgs[n], 0)
+            obj = self.imgs[n]
 
             # if image intersect scene, try find next
             select_new = False
@@ -111,28 +89,18 @@ class MultiDisDsprites(IterableDataset):
 
     def generate_sample(self):
         # empty scene
-        scene1 = np.zeros((1, 64, 64), dtype=int)
-        scene2 = np.zeros((1, 64, 64), dtype=int)
+        scene = np.zeros((1, 64, 64), dtype=int)
 
-        # get random pair of objects that differ only in one feature
-        first_obj, pair_obj, exchange_labels = self.get_pair()
+        # Get pair of images that not intersect
+        img, pair_img = self.get_pair()
 
-        # start creating scenes
-        scene1 += first_obj
-        scene2 += pair_obj
+        scene += img + pair_img
 
-        # second_obj -> (1, 64, 64)
-        second_obj = self.generate_object(scene1, scene2)
-        scene1 += second_obj
-        scene2 += second_obj
+        scene = torch.from_numpy(scene).float()
+        img = torch.from_numpy(img).float()
+        pair_img = torch.from_numpy(pair_img).float()
 
-        scene1 = torch.from_numpy(scene1).float()
-        scene2 = torch.from_numpy(scene2).float()
-        first_obj = torch.from_numpy(first_obj).float()
-        second_obj = torch.from_numpy(second_obj).float()
-        pair_obj = torch.from_numpy(pair_obj).float()
-
-        return scene1, scene2, first_obj, pair_obj, second_obj, exchange_labels
+        return scene, img, pair_img
 
     def inference_sample(self):
         # empty scene where to add objects
@@ -160,10 +128,12 @@ class MultiDisDsprites(IterableDataset):
 
         return scene, image1, donor, image2
 
+
 if __name__ == '__main__':
     # dataset
     mdd = MultiDisDsprites(
         path='/home/yessense/PycharmProjects/multi-dis-dsprites/src/dataset/data/dsprite_train.npz')
+
 
     def show_pairs(mdd: MultiDisDsprites, sample_size: int = 5):
         fig, ax = plt.subplots(sample_size, 2)
@@ -173,6 +143,7 @@ if __name__ == '__main__':
             ax[i, 1].imshow(pair.squeeze(0), cmap='gray')
 
         plt.show()
+
 
     def show_inference_dataset(mdd: MultiDisDsprites, sample_size: int = 5):
         fig, ax = plt.subplots(sample_size, 4)
@@ -189,23 +160,22 @@ if __name__ == '__main__':
 
         plt.show()
 
+
     def show_training_dataset(mdd: MultiDisDsprites, batch_size: int = 5):
         batch_size = 5
         loader = DataLoader(mdd, batch_size=batch_size)
 
         for i, batch in enumerate(loader):
-            scenes1, scenes2, fist_objs, pair_objs, second_objs, exchange_labels = batch
+            scene, img, pair_img = batch
             if i % 4000 == 0:
 
-                fig, ax = plt.subplots(batch_size, 5, figsize=(5, 5))
+                fig, ax = plt.subplots(batch_size, 3, figsize=(5, 5))
                 for i in range(batch_size):
-                    for j, column in enumerate(batch[:-1]):
+                    for j, column in enumerate(batch):
                         ax[i, j].imshow(column[i].detach().cpu().numpy().squeeze(0), cmap='gray')
                         ax[i, j].set_axis_off()
 
                 plt.show()
 
-            assert torch.all(scenes1 == fist_objs + second_objs)
-            assert torch.all(scenes2 == pair_objs + second_objs)
-
-    show_inference_dataset(mdd, 5)
+    # show_inference_dataset(mdd, 5)
+    show_training_dataset(mdd, 5)
