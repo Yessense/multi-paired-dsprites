@@ -54,7 +54,7 @@ autoencoder = scene_vae.MultiPairedDspritesVAE(**dict_args)
 # Callbacks
 # ------------------------------------------------------------
 
-monitor = 'Sum of losses'
+monitor = 'BCE reconstruct'
 
 # early stop
 patience = 5
