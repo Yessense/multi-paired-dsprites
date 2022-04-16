@@ -122,9 +122,9 @@ class MultiDisDsprites(IterableDataset):
         # stack elements into torch tensors
         scene = torch.from_numpy(scene).float()
         image1, donor, image2 = objs
-        image1 = torch.from_numpy(image1).float()
-        donor = torch.from_numpy(donor).float()
-        image2 = torch.from_numpy(image2).float()
+        image1 = torch.from_numpy(image1).float().unsqueeze(0)
+        donor = torch.from_numpy(donor).float().unsqueeze(0)
+        image2 = torch.from_numpy(image2).float().unsqueeze(0)
 
         return scene, image1, donor, image2
 

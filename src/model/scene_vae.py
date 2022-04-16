@@ -96,12 +96,10 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         self.save_hyperparameters()
 
     def reparameterize(self, mu, log_var):
-        if self.training:
-            std = torch.exp(0.5 * log_var)
-            eps = torch.randn_like(std)
-            return mu + std * eps
-        else:
-            return mu
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        return mu + std * eps
+
 
     def encode_image(self, image, placeholders=False):
         """Multiply img features on feature placeholders"""
@@ -119,7 +117,8 @@ class MultiPairedDspritesVAE(pl.LightningModule):
             mask = self.feature_placeholders.expand(z.size()).to(self.device)
             z = z * mask
 
-        return torch.sum(z, dim=1)
+        return z
+
 
     def encode_scene(self, z1, z2):
         batch_size = z1.shape[0]
@@ -140,7 +139,9 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         latent_img = self.encode_image(img, self.hd_features)
         latent_pair_img = self.encode_image(pair_img, self.hd_features)
 
-        # multiply by object number placeholders
+        latent_img = torch.sum(latent_pair_img, dim=1)
+        latent_pair_img = torch.sum(latent_pair_img, dim=1)
+
         scene_latent = self.encode_scene(latent_img, latent_pair_img)
 
         reconstruct = self.decoder(scene_latent)
@@ -150,7 +151,7 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
         # log training process
         self.log("BCE reconstruct", loss, prog_bar=True)
-        self.log("IOU mean ", iou, prog_bar=True)
+        self.log("IOU", iou, prog_bar=True)
 
         if self.global_step % 499 == 0:
             self.logger.experiment.log({
