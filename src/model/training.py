@@ -23,6 +23,7 @@ parser = ArgumentParser()
 program_parser = parser.add_argument_group('program')
 program_parser.add_argument("--dataset_size", type=int, default=10 ** 6)
 program_parser.add_argument("--batch_size", type=int, default=128)
+program_parser.add_argument("--dataset_mode", type=str, default='two objects')
 program_parser.add_argument("--dataset_path", type=str,
                             default='/home/yessense/PycharmProjects/Multi-paired-dsprites/src/dataset/data/dsprites.npz')
 
@@ -39,7 +40,7 @@ args = parser.parse_args()
 # Load dataset
 # ------------------------------------------------------------
 
-iterable_dataset = dataset.MultiDisDsprites(size=args.dataset_size, path=args.dataset_path)
+iterable_dataset = dataset.MultiDisDsprites(size=args.dataset_size, path=args.dataset_path, mode=)
 loader = DataLoader(iterable_dataset, batch_size=args.batch_size, num_workers=1)
 
 # ------------------------------------------------------------

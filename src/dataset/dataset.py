@@ -53,19 +53,17 @@ class MultiDisDsprites(IterableDataset):
         return pos
 
     def __iter__(self):
-        return self._sample_generator()
-
-    def _sample_generator(self):
-        """Dataset objects generator"""
-
         if self.mode == 'two objects':
-            for i in range(self.size):
-                yield self.two_objects_and_scene()
-        if self.mode == 'inference':
-            for i in range(self.size):
-                yield self.inference_sample()
+            return self._sample_generator(gen_object=self.two_objects_and_scene)
+        elif self.mode == 'inference':
+            return self._sample_generator(gen_object=self.inference_sample())
         else:
-            raise NameError(f'{self.mode!r} is a wrong mode')
+            raise NameError("Wrong mode")
+
+    def _sample_generator(self, gen_object):
+        """Dataset objects generator"""
+        for i in range(self.size):
+            yield gen_object()
 
     def _get_pair(self):
         """get random pair of objects that differ only in one feature """

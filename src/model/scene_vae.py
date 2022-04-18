@@ -100,7 +100,8 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
         self.save_hyperparameters()
 
-    def reparameterize(self, mu, log_var):
+    @staticmethod
+    def reparameterize(mu, log_var):
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         return mu + std * eps
