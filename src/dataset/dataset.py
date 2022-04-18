@@ -9,6 +9,8 @@ import torch
 from numpy import ndarray
 from torch.utils.data import IterableDataset, DataLoader
 
+modes = ['inference', 'two objects']
+
 
 class MultiDisDsprites(IterableDataset):
     """IterableDataset with dSprites scenes
@@ -24,7 +26,9 @@ class MultiDisDsprites(IterableDataset):
 
     def __init__(self,
                  path='./data/dSprites.npz',
-                 size: int = 10 ** 6):
+                 size: int = 10 ** 6,
+                 mode='two objects'):
+        self.mode = mode
 
         # Load zip file
         dataset_zip = np.load(path)
@@ -41,7 +45,7 @@ class MultiDisDsprites(IterableDataset):
         self.features_range = [list(range(i)) for i in self.features_count]
         self.multiplier = list(itertools.accumulate(self.features_count[-1:0:-1], operator.mul))[::-1] + [1]
 
-    def get_element_pos(self, labels: List[int]) -> int:
+    def _get_element_pos(self, labels: List[int]) -> int:
         """ Get position of image with `labels` in dataset """
         pos = 0
         for mult, label in zip(self.multiplier, labels):
@@ -49,20 +53,27 @@ class MultiDisDsprites(IterableDataset):
         return pos
 
     def __iter__(self):
-        return self.sample_generator()
+        return self._sample_generator()
 
-    def sample_generator(self):
+    def _sample_generator(self):
         """Dataset objects generator"""
-        for i in range(self.size):
-            yield self.generate_sample()
 
-    def get_pair(self):
+        if self.mode == 'two objects':
+            for i in range(self.size):
+                yield self.two_objects_and_scene()
+        if self.mode == 'inference':
+            for i in range(self.size):
+                yield self.inference_sample()
+        else:
+            raise NameError(f'{self.mode!r} is a wrong mode')
+
+    def _get_pair(self):
         """get random pair of objects that differ only in one feature """
         idx = random.randint(0, self.dsprites_size - 1)
 
         img = self.imgs[idx]
 
-        pair_img = self.generate_object(img)
+        pair_img = self._generate_object(img)
 
         # img -> (1, 64, 64)
         img = np.expand_dims(img, 0)
@@ -70,7 +81,7 @@ class MultiDisDsprites(IterableDataset):
         pair_img = np.expand_dims(pair_img, 0)
         return img, pair_img
 
-    def generate_object(self, *scenes) -> ndarray:
+    def _generate_object(self, *scenes) -> ndarray:
         """Find object that will not intersect any scene in `scenes`"""
 
         while True:
@@ -87,12 +98,13 @@ class MultiDisDsprites(IterableDataset):
             if not select_new:
                 return obj
 
-    def generate_sample(self):
-        # empty scene
+    def two_objects_and_scene(self):
+        """Returns two objects on scene that won't intersect"""
+        # emptyscene
         scene = np.zeros((1, 64, 64), dtype=int)
 
         # Get pair of images that not intersect
-        img, pair_img = self.get_pair()
+        img, pair_img = self._get_pair()
 
         scene += img + pair_img
 
@@ -103,6 +115,7 @@ class MultiDisDsprites(IterableDataset):
         return scene, img, pair_img
 
     def inference_sample(self):
+        """Returns two images and a donor"""
         # empty scene where to add objects
         scene = np.zeros((1, 64, 64), dtype=int)
 
@@ -115,7 +128,7 @@ class MultiDisDsprites(IterableDataset):
         # number of objects on scene
         n_objs = 3
         for i in range(n_objs):
-            obj = self.generate_object(scene, scene)
+            obj = self._generate_object(scene, scene)
             scene += obj.astype(int)
             objs.append(obj)
 
@@ -138,7 +151,7 @@ if __name__ == '__main__':
     def show_pairs(mdd: MultiDisDsprites, sample_size: int = 5):
         fig, ax = plt.subplots(sample_size, 2)
         for i in range(sample_size):
-            img, pair, exchange_labels = mdd.get_pair()
+            img, pair, exchange_labels = mdd._get_pair()
             ax[i, 0].imshow(img.squeeze(0), cmap='gray')
             ax[i, 1].imshow(pair.squeeze(0), cmap='gray')
 

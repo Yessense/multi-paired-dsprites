@@ -79,11 +79,11 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
             features_im: ItemMemory = ItemMemory(name="Features", dimension=self.latent_dim,
                                                  init_vectors=self.feature_names)
-            self.feature_placeholders = torch.Tensor(features_im.memory).float().to(self.device)
-            self.feature_placeholders = self.feature_placeholders.unsqueeze(0)
+            self.hd_feature_placeholders = torch.Tensor(features_im.memory).float().to(self.device)
+            self.hd_feature_placeholders = self.hd_feature_placeholders.unsqueeze(0)
 
         # Object placeholders
-        self.obj_placeholders = feature_placeholders
+        self.obj_placeholders = obj_placeholders
         # placeholder vector -> (2, 1024) = [1024, 1024] for multiplication on objects
         # ready to .expand()
         if self.obj_placeholders:
@@ -94,8 +94,9 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
             objs_im: ItemMemory = ItemMemory(name="Objects", dimension=self.latent_dim,
                                              init_vectors=self.obj_names)
-            self.obj_placeholders = [torch.Tensor(objs_im.get_vector(name).vector).float().to(self.device) for name in
-                                     self.obj_names]
+            self.hd_obj_placeholders = [torch.Tensor(objs_im.get_vector(name).vector).float().to(self.device) for name
+                                        in
+                                        self.obj_names]
 
         self.save_hyperparameters()
 
@@ -117,7 +118,7 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
         if placeholders:
             # mask -> (-1, 5, 1024)
-            mask = self.feature_placeholders.expand(z.size()).to(self.device)
+            mask = self.hd_feature_placeholders.expand(z.size()).to(self.device)
             z = z * mask
 
         return z
@@ -126,7 +127,7 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         """Make scene from sum of features vectors"""
         if self.obj_placeholders:
             batch_size = z1.shape[0]
-            masks = [mask.repeat(batch_size, 1).to(self.device) for mask in self.obj_placeholders]
+            masks = [mask.repeat(batch_size, 1).to(self.device) for mask in self.hd_obj_placeholders]
             z1 *= masks[0]
             z2 *= masks[1]
 
@@ -142,7 +143,7 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         latent_img = self.encode_image(img, self.feature_placeholders)
         latent_pair_img = self.encode_image(pair_img, self.feature_placeholders)
 
-        latent_img = torch.sum(latent_pair_img, dim=1)
+        latent_img = torch.sum(latent_img, dim=1)
         latent_pair_img = torch.sum(latent_pair_img, dim=1)
 
         scene_latent = self.encode_scene(latent_img, latent_pair_img)
