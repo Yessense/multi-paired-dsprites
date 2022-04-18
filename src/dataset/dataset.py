@@ -57,7 +57,7 @@ class MultiDisDsprites(IterableDataset):
             yield self.generate_sample()
 
     def get_pair(self):
-        """get random pair of objects that differ only in one feature"""
+        """get random pair of objects that differ only in one feature """
         idx = random.randint(0, self.dsprites_size - 1)
 
         img = self.imgs[idx]
@@ -71,7 +71,7 @@ class MultiDisDsprites(IterableDataset):
         return img, pair_img
 
     def generate_object(self, *scenes) -> ndarray:
-        """Find object """
+        """Find object that will not intersect any scene in `scenes`"""
 
         while True:
             # select random image
@@ -176,6 +176,7 @@ if __name__ == '__main__':
                         ax[i, j].set_axis_off()
 
                 plt.show()
+
 
     # show_inference_dataset(mdd, 5)
     show_training_dataset(mdd, 5)

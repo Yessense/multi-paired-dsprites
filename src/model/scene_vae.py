@@ -100,7 +100,6 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         eps = torch.randn_like(std)
         return mu + std * eps
 
-
     def encode_image(self, image, placeholders=False):
         """Multiply img features on feature placeholders"""
         mu, log_var = self.encoder(image)
@@ -118,7 +117,6 @@ class MultiPairedDspritesVAE(pl.LightningModule):
             z = z * mask
 
         return z
-
 
     def encode_scene(self, z1, z2):
         batch_size = z1.shape[0]
@@ -150,7 +148,7 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         iou = iou_pytorch(reconstruct, scene)
 
         # log training process
-        self.log("BCE reconstruct", loss, prog_bar=True)
+        self.log("BCE reconstruct", loss)
         self.log("IOU", iou, prog_bar=True)
 
         if self.global_step % 499 == 0:
