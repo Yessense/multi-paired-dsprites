@@ -40,7 +40,7 @@ args = parser.parse_args()
 # Load dataset
 # ------------------------------------------------------------
 
-iterable_dataset = dataset.MultiDisDsprites(size=args.dataset_size, path=args.dataset_path, mode=)
+iterable_dataset = dataset.MultiDisDsprites(size=args.dataset_size, path=args.dataset_path, mode=args.dataset_mode)
 loader = DataLoader(iterable_dataset, batch_size=args.batch_size, num_workers=1)
 
 # ------------------------------------------------------------
