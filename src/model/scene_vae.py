@@ -68,7 +68,7 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         self.decoder = Decoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
 
         # Feature placeholders
-        self.feature_placeholders = obj_placeholders
+        self.feature_placeholders = feature_placeholders
         # placeholder vectors -> (1, 5, 1024) for multiplication on object features
         # ready to .expand()
         if self.feature_placeholders:
