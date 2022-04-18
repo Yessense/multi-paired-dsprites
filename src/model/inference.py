@@ -122,9 +122,9 @@ class Experiment:
         donor = donor.to(self.device)
 
         # get latent representations
-        latent_i1 = self.model.encode_image(image1, placeholders=self.model.hd_features)
-        latent_d = self.model.encode_image(donor, placeholders=self.model.hd_features)
-        latent_i2 = self.model.encode_image(image2, placeholders=self.model.hd_features)
+        latent_i1 = self.model.encode_image(image1, placeholders=self.model.feature_placeholders)
+        latent_d = self.model.encode_image(donor, placeholders=self.model.feature_placeholders)
+        latent_i2 = self.model.encode_image(image2, placeholders=self.model.feature_placeholders)
 
         fig, ax = plt.subplots(5, 5)
         plt.figure(figsize=(20, 8))

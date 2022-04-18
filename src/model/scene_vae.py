@@ -27,9 +27,9 @@ class MultiPairedDspritesVAE(pl.LightningModule):
                             help="dimension of the latent feature representation")
         parser.add_argument("--n_features", type=int, default=5,
                             help="number of different features")
-        parser.add_argument("--hd_objs", type=bool, default=True,
+        parser.add_argument("--obj_placeholders", type=bool, default=True,
                             help="object level placeholders")
-        parser.add_argument("--hd_features", type=bool, default=True,
+        parser.add_argument("--feature_placeholders", type=bool, default=True,
                             help="feature level placeholders")
         parser.add_argument("--encoder_state_dict", type=str,
                             default='model/saved_states/encoder_state_dict.pt')
@@ -39,19 +39,21 @@ class MultiPairedDspritesVAE(pl.LightningModule):
                  latent_dim: int = 1024,
                  lr: float = 0.001,
                  n_features: int = 5,
-                 hd_objs: bool = False,
-                 hd_features: bool = False,
+                 feature_placeholders: bool = False,
+                 obj_placeholders: bool = False,
                  feature_names: Optional[List] = None,
                  obj_names: Optional[List] = None,
                  encoder_state_dict: Optional[str] = '',
                  **kwargs):
         super().__init__()
 
+        # Model parameters
         self.image_size = image_size
         self.latent_dim = latent_dim
         self.n_features = n_features
         self.lr = lr
 
+        # Load Encoder from state dict
         self.encoder = Encoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
 
         if encoder_state_dict is None or not len(encoder_state_dict):
@@ -62,14 +64,14 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         for parameter in self.encoder.parameters():
             parameter.requires_grad = False
 
+        # Decoder
         self.decoder = Decoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
 
-        self.hd_objs = hd_objs
-        self.hd_features = hd_features
-
+        # Feature placeholders
+        self.feature_placeholders = obj_placeholders
         # placeholder vectors -> (1, 5, 1024) for multiplication on object features
         # ready to .expand()
-        if self.hd_features:
+        if self.feature_placeholders:
             if feature_names is None:
                 self.feature_names = ['shape', 'size', 'rotation', 'posx', 'posy']
             else:
@@ -80,9 +82,11 @@ class MultiPairedDspritesVAE(pl.LightningModule):
             self.feature_placeholders = torch.Tensor(features_im.memory).float().to(self.device)
             self.feature_placeholders = self.feature_placeholders.unsqueeze(0)
 
+        # Object placeholders
+        self.obj_placeholders = feature_placeholders
         # placeholder vector -> (2, 1024) = [1024, 1024] for multiplication on objects
         # ready to .expand()
-        if self.hd_objs:
+        if self.obj_placeholders:
             if obj_names is None:
                 self.obj_names = ['obj1', 'obj2']
             else:
@@ -119,11 +123,12 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         return z
 
     def encode_scene(self, z1, z2):
-        batch_size = z1.shape[0]
-        masks = [mask.repeat(batch_size, 1).to(self.device) for mask in self.obj_placeholders]
-
-        z1 *= masks[0]
-        z2 *= masks[1]
+        """Make scene from sum of features vectors"""
+        if self.obj_placeholders:
+            batch_size = z1.shape[0]
+            masks = [mask.repeat(batch_size, 1).to(self.device) for mask in self.obj_placeholders]
+            z1 *= masks[0]
+            z2 *= masks[1]
 
         scene = z1 + z2
 
@@ -134,8 +139,8 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         scene, img, pair_img = batch
 
         # Encode features
-        latent_img = self.encode_image(img, self.hd_features)
-        latent_pair_img = self.encode_image(pair_img, self.hd_features)
+        latent_img = self.encode_image(img, self.feature_placeholders)
+        latent_pair_img = self.encode_image(pair_img, self.feature_placeholders)
 
         latent_img = torch.sum(latent_pair_img, dim=1)
         latent_pair_img = torch.sum(latent_pair_img, dim=1)
