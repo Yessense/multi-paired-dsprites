@@ -170,8 +170,12 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         if self.global_step % 499 == 0:
             self.logger.experiment.log({
                 "reconstruct/examples": [
-                    wandb.Image(scene[0], caption='Scene 1'),
-                    wandb.Image(reconstruct[0], caption='Recon 1'),
+                    wandb.Image(img[0], caption='Image 1'),
+                    wandb.Image(img2[0], caption='Image 2'),
+                    wandb.Image(donor[0], caption='Donor'),
+                    wandb.Image(pair_img[0], caption='Pair image'),
+                    wandb.Image(scene[0], caption='Scene'),
+                    wandb.Image(reconstruct[0], caption='Reconstruction'),
                 ]})
 
         return loss
