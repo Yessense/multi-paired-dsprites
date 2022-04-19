@@ -1,7 +1,7 @@
 import itertools
 import operator
 import random
-from typing import List
+from typing import List, Tuple, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,23 +25,42 @@ class MultiDisDsprites(IterableDataset):
     """
 
     def __init__(self,
-                 path='./data/dSprites.npz',
+                 path: str = './data/dSprites.npz',
                  size: int = 10 ** 6,
-                 mode='two objects'):
+                 mode: str = 'two objects',
+                 max_exchanges: int = 1):
+        self.max_exchanges = max_exchanges
         self.mode = mode
 
-        # Load zip file
+        # Load npz numpy archive
         dataset_zip = np.load(path)
 
-        # Get images and labels
+        # Images: numpy array -> (737280, 64, 64)
         self.imgs = dataset_zip['imgs']
+
+        # Labels: numpy array -> (737280, 5)
+        # Each column contains int value in range of `features_count`
         self.labels = dataset_zip['latents_classes'][:, 1:]
 
-        # feature info
-        self.dsprites_size = len(self.imgs)
         self.size = size
-        self.lat_names = ('shape', 'scale', 'orientation', 'posX', 'posY')
+
+        # ----------------------------------------
+        # features info
+        # ----------------------------------------
+
+        # Size of dataset (737280)
+        self.dsprites_size = len(self.imgs)
+
+        # List of feature names
+        self.feature_names: Tuple[str, ...] = ('shape', 'scale', 'orientation', 'posX', 'posY')
+
+        # Feature numbers
+        self.features_list: List[int] = list(range(len(self.feature_names)))
+
+        # Count each feature counts
         self.features_count = [3, 6, 40, 32, 32]
+
+        # Getting multipler for each feature position
         self.features_range = [list(range(i)) for i in self.features_count]
         self.multiplier = list(itertools.accumulate(self.features_count[-1:0:-1], operator.mul))[::-1] + [1]
 
@@ -56,7 +75,9 @@ class MultiDisDsprites(IterableDataset):
         if self.mode == 'two objects':
             return self._sample_generator(gen_object=self.two_objects_and_scene)
         elif self.mode == 'inference':
-            return self._sample_generator(gen_object=self.inference_sample())
+            return self._sample_generator(gen_object=self.inference_sample)
+        elif self.mode == 'exchange':
+            return self._sample_generator(gen_object=self.exchange_sample)
         else:
             raise NameError("Wrong mode")
 
@@ -126,7 +147,7 @@ class MultiDisDsprites(IterableDataset):
         # number of objects on scene
         n_objs = 3
         for i in range(n_objs):
-            obj = self._generate_object(scene, scene)
+            obj = self._generate_object(scene)
             scene += obj.astype(int)
             objs.append(obj)
 
@@ -139,11 +160,68 @@ class MultiDisDsprites(IterableDataset):
 
         return scene, image1, donor, image2
 
+    def exchange_sample(self):
+        """Generate 4 objects on scene: img1, img2, donor, pair img to img1"""
+
+        # Empty scene
+        scene = np.zeros((1, 64, 64), dtype=int)
+
+        # Generate img1
+        n = random.randrange(0, self.dsprites_size)
+        img = self.imgs[n]
+        labels = self.labels[n]
+        scene += img
+
+        # Generate img2 and donor
+        objs = []
+        n_objs = 2
+
+        for i in range(n_objs):
+            obj = self._generate_object(scene)
+            objs.append(obj)
+
+        donor, img2 = objs
+
+        # Generate pair img
+        # Choose number of exchanges
+        n_exchanges = random.randrange(1, self.max_exchanges + 1)
+
+        # select features that will be exchanged
+        exchanges = random.sample(population=self.features_list, k=n_exchanges)
+
+        exchange_labels = np.zeros_like(labels, dtype=bool)
+        pair_img_labels = labels[:]
+
+        for feature_type in exchanges:
+            # Find other feature and add his number to pair_img_labels
+            exchange_labels[feature_type] = True
+            other_feature = random.choice(self.features_range[feature_type])
+
+            while other_feature == labels[feature_type]:
+                other_feature = random.choice(self.features_range[feature_type])
+
+            pair_img_labels[feature_type] = other_feature
+
+        pair_idx: int = self._get_element_pos(pair_img_labels)
+        pair_img = self.imgs[pair_idx]
+
+        scene = img2.astype(bool) | pair_img.astype(bool)
+
+        img = torch.from_numpy(img).float().unsqueeze(0)
+        img2 = torch.from_numpy(img2).float().unsqueeze(0)
+        donor = torch.from_numpy(donor).float().unsqueeze(0)
+        pair_img = torch.from_numpy(pair_img).float().unsqueeze(0)
+        scene = torch.from_numpy(scene).float().unsqueeze(0)
+        exchange_labels = torch.from_numpy(exchange_labels).unsqueeze(-1)
+
+        return img, img2, donor, pair_img, scene, exchange_labels
+
 
 if __name__ == '__main__':
     # dataset
     mdd = MultiDisDsprites(
-        path='/home/yessense/PycharmProjects/multi-dis-dsprites/src/dataset/data/dsprite_train.npz')
+        path='/home/yessense/PycharmProjects/multi-dis-dsprites/src/dataset/data/dsprite_train.npz', mode='exchange',
+        max_exchanges=5)
 
 
     def show_pairs(mdd: MultiDisDsprites, sample_size: int = 5):
@@ -189,5 +267,49 @@ if __name__ == '__main__':
                 plt.show()
 
 
+    def plot_list(suptitle: str, titles: Sequence[str], images: List):
+        """Plot a sequence of images in a row"""
+
+        fig, ax = plt.subplots(1, len(images))
+        plt.figure(figsize=(20, 8))
+
+        if len(images) == 1:
+            ax.imshow(images[1][0].detach().cpu().numpy().squeeze(0), cmap='gray')
+            ax.set_axis_off()
+        else:
+            for i in range(len(images)):
+                ax[i].imshow(images[i][0].detach().cpu().numpy().squeeze(0), cmap='gray')
+                ax[i].set_axis_off()
+                ax[i].set_title(titles[i])
+
+        fig.suptitle(suptitle)
+        plt.show()
+
+
+    def show_exchange_dataset(mdd: MultiDisDsprites):
+        short_y_labels = {0: 'Shape', 1: 'Scale', 2: 'Orientation', 3: 'X', 4: 'Y'}
+
+        def make_y_label_name(idx):
+            names = [short_y_labels[i] for i, value in enumerate(idx) if value]
+            name = ", ".join(names)
+            return name
+
+        loader = DataLoader(mdd, batch_size=1)
+
+        batch = next(iter(loader))
+
+        img, img2, donor, pair_img, scene, exchange_labels = batch
+        indices = exchange_labels.squeeze().numpy()
+
+        titles = ['Img', 'Img2', 'Donor', 'Pair img', 'Scene']
+
+        plot_list(f'Exchanges dataset (exchanges = {make_y_label_name(indices)})', titles=titles,
+                  images=[img, pair_img, img2, donor, scene])
+
+
     # show_inference_dataset(mdd, 5)
-    show_training_dataset(mdd, 5)
+    # show_training_dataset(mdd, 5)
+
+    show_exchange_dataset(mdd)
+    show_exchange_dataset(mdd)
+    show_exchange_dataset(mdd)

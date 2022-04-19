@@ -138,16 +138,25 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
     def training_step(self, batch):
         """Function exchanges objects from scene1 to scene2"""
-        scene, img, pair_img = batch
+        img, img2, donor, pair_img, scene, exchange_labels = batch
+        # scene, img, pair_img = batch
 
         # Encode features
         latent_img = self.encode_image(img, self.feature_placeholders)
-        latent_pair_img = self.encode_image(pair_img, self.feature_placeholders)
+        latent_donor = self.encode_image(donor, self.feature_placeholders)
+        latent_img2 = self.encode_image(img2, self.feature_placeholders)
 
-        latent_img = torch.sum(latent_img, dim=1)
+        exchange_labels = exchange_labels.expand(latent_img.size())
+
+        latent_pair_img = torch.where(exchange_labels, latent_img, latent_donor)
+
+        latent_img2 = torch.sum(latent_img2, dim=1)
         latent_pair_img = torch.sum(latent_pair_img, dim=1)
 
-        scene_latent = self.encode_scene(latent_img, latent_pair_img)
+        if self.global_step % 2 == 0:
+            scene_latent = self.encode_scene(latent_img2, latent_pair_img)
+        else:
+            scene_latent = self.encode_scene(latent_pair_img, latent_img2)
 
         reconstruct = self.decoder(scene_latent)
 
