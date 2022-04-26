@@ -201,10 +201,14 @@ class MultiDisDsprites(IterableDataset):
         for feature_type in exchanges:
             # Find other feature and add his number to pair_img_labels
             exchange_labels[feature_type] = True
-            other_feature = random.choice(self.features_range[feature_type])
 
-            while other_feature == labels[feature_type]:
+            if feature_type == 0:
+                other_feature = 2
+            else:
                 other_feature = random.choice(self.features_range[feature_type])
+
+                while other_feature == labels[feature_type]:
+                    other_feature = random.choice(self.features_range[feature_type])
 
             pair_img_labels[feature_type] = other_feature
 
