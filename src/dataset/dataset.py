@@ -106,6 +106,9 @@ class MultiDisDsprites(IterableDataset):
         while True:
             # select random image
             n = random.randrange(0, self.dsprites_size)
+            while self.labels[n][0] != 2:
+                n = random.randrange(0, self.dsprites_size)
+
             obj = self.imgs[n]
 
             # if image intersect scene, try find next
@@ -168,6 +171,9 @@ class MultiDisDsprites(IterableDataset):
 
         # Generate img1
         n = random.randrange(0, self.dsprites_size)
+        while self.labels[n][0] != 2:
+            n = random.randrange(0, self.dsprites_size)
+
         img = self.imgs[n]
         labels = self.labels[n]
         scene += img
