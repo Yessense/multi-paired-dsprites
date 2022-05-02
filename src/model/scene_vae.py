@@ -59,13 +59,11 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         # Load Encoder from state dict
         self.encoder = Encoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
 
-        if encoder_state_dict is None or not len(encoder_state_dict):
-            raise NameError
-
-        state_dict = torch.load(encoder_state_dict)
-        self.encoder.load_state_dict(state_dict)
-        for parameter in self.encoder.parameters():
-            parameter.requires_grad = False
+        if encoder_state_dict is not None and len(encoder_state_dict):
+            state_dict = torch.load(encoder_state_dict)
+            self.encoder.load_state_dict(state_dict)
+            for parameter in self.encoder.parameters():
+                parameter.requires_grad = False
 
         # Decoder
         self.decoder = Decoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
@@ -217,6 +215,7 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
             loss = self.loss_f(reconstructed_img, img) + self.loss_f(reconstructed_pair_img, pair_img)
             iou = iou_pytorch(reconstructed_img, img) + iou_pytorch(reconstructed_pair_img, pair_img)
+            iou /= 2
 
             # log training process
             self.log("BCE reconstruct", loss)
