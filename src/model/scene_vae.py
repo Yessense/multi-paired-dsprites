@@ -7,6 +7,7 @@ import torch.optim
 
 import wandb
 
+from src.model.mlp import MLP
 from src.utils import iou_pytorch  # type: ignore
 from src.model.decoder import Decoder  # type: ignore
 from src.model.encoder import Encoder  # type: ignore
@@ -53,6 +54,8 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         self.n_features = n_features
         self.lr = lr
 
+        self.dataset_mode = kwargs['dataset_mode']
+
         # Load Encoder from state dict
         self.encoder = Encoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
 
@@ -66,6 +69,10 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
         # Decoder
         self.decoder = Decoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
+
+        # MLP if needed
+        if self.dataset_mode == 'two objects':
+            self.mlp = MLP(latent_dim=self.latent_dim)
 
         # Feature placeholders
         self.feature_placeholders = feature_placeholders
@@ -138,47 +145,94 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
     def training_step(self, batch):
         """Function exchanges objects from scene1 to scene2"""
-        img, img2, donor, pair_img, scene, exchange_labels = batch
-        # scene, img, pair_img = batch
+        if self.dataset_mode == 'exchange':
+            img, img2, donor, pair_img, scene, exchange_labels = batch
+            # scene, img, pair_img = batch
 
-        # Encode features
-        latent_img = self.encode_image(img, self.feature_placeholders)
-        latent_donor = self.encode_image(donor, self.feature_placeholders)
-        latent_img2 = self.encode_image(img2, self.feature_placeholders)
+            # Encode features
+            latent_img = self.encode_image(img, self.feature_placeholders)
+            latent_donor = self.encode_image(donor, self.feature_placeholders)
+            latent_img2 = self.encode_image(img2, self.feature_placeholders)
 
-        exchange_labels = exchange_labels.expand(latent_img.size())
+            # Expand exchange labels (-1, 5, 1) -> (-1, 5, 1024)
+            exchange_labels = exchange_labels.expand(latent_img.size())
 
-        latent_pair_img = torch.where(exchange_labels, latent_img, latent_donor)
+            # Exchange one feature between latent img and latent donor
+            latent_pair_img = torch.where(exchange_labels, latent_img, latent_donor)
 
-        latent_img2 = torch.sum(latent_img2, dim=1)
-        latent_pair_img = torch.sum(latent_pair_img, dim=1)
+            # Sum latent features into object
+            latent_img2 = torch.sum(latent_img2, dim=1)
+            latent_pair_img = torch.sum(latent_pair_img, dim=1)
 
-        if self.global_step % 2 == 0:
-            scene_latent = self.encode_scene(latent_img2, latent_pair_img)
-        else:
-            scene_latent = self.encode_scene(latent_pair_img, latent_img2)
+            # Multiply on placeholder vector
+            if self.global_step % 2 == 0:
+                scene_latent = self.encode_scene(latent_img2, latent_pair_img)
+            else:
+                scene_latent = self.encode_scene(latent_pair_img, latent_img2)
 
-        reconstruct = self.decoder(scene_latent)
+            # Reconstuct scene
+            reconstruct = self.decoder(scene_latent)
 
-        loss = self.loss_f(reconstruct, scene)
-        iou = iou_pytorch(reconstruct, scene)
+            loss = self.loss_f(reconstruct, scene)
+            iou = iou_pytorch(reconstruct, scene)
 
-        # log training process
-        self.log("BCE reconstruct", loss)
-        self.log("IOU", iou, prog_bar=True)
+            # log training process
+            self.log("BCE reconstruct", loss)
+            self.log("IOU", iou, prog_bar=True)
 
-        if self.global_step % 499 == 0:
-            self.logger.experiment.log({
-                "reconstruct/examples": [
-                    wandb.Image(img[0], caption='Image 1'),
-                    wandb.Image(img2[0], caption='Image 2'),
-                    wandb.Image(donor[0], caption='Donor'),
-                    wandb.Image(pair_img[0], caption='Pair image'),
-                    wandb.Image(scene[0], caption='Scene'),
-                    wandb.Image(reconstruct[0], caption='Reconstruction'),
-                ]})
+            # log images
+            if self.global_step % 499 == 0:
+                self.logger.experiment.log({
+                    "reconstruct/examples": [
+                        wandb.Image(img[0], caption='Image 1'),
+                        wandb.Image(img2[0], caption='Image 2'),
+                        wandb.Image(donor[0], caption='Donor'),
+                        wandb.Image(pair_img[0], caption='Pair image'),
+                        wandb.Image(scene[0], caption='Scene'),
+                        wandb.Image(reconstruct[0], caption='Reconstruction'),
+                    ]})
+            return loss
 
-        return loss
+        # Just two objects that wont't instersect
+        if self.dataset_mode == 'two objects':
+            scene, img, pair_img = batch
+
+            # encode features
+            latent_img = self.encode_image(img, self.feature_placeholders)
+            latent_pair_img = self.encode_image(pair_img, self.feature_placeholders)
+
+            # Sum latent features into object
+            latent_img = torch.sum(latent_img, dim=1)
+            latent_pair_img = torch.sum(latent_pair_img, dim=1)
+
+            batch_size = latent_img.shape[0]
+            masks = [mask.repeat(batch_size, 1).to(self.device) for mask in self.hd_obj_placeholders]
+            latent_img *= masks[0]
+            latent_pair_img *= masks[1]
+
+            scene_latent = latent_img + latent_pair_img
+
+            reconstructed_img = self.decoder(self.mlp(torch.cat([scene_latent, masks[0]], dim=1)))
+            reconstructed_pair_img = self.decoder(self.mlp(torch.cat([scene_latent, masks[1]], dim=1)))
+
+            loss = self.loss_f(reconstructed_img, img) + self.loss_f(reconstructed_pair_img, pair_img)
+            iou = iou_pytorch(reconstructed_img, img) + iou_pytorch(reconstructed_pair_img, pair_img)
+
+            # log training process
+            self.log("BCE reconstruct", loss)
+            self.log("IOU", iou, prog_bar=True)
+
+            # log images
+            if self.global_step % 499 == 0:
+                self.logger.experiment.log({
+                    "reconstruct/examples": [
+                        wandb.Image(img[0], caption='Image'),
+                        wandb.Image(pair_img[0], caption='Pair image'),
+                        wandb.Image(reconstructed_img[0], caption='Reconstructed Image'),
+                        wandb.Image(reconstructed_pair_img[0], caption='Reconstructed Pair image'),
+                    ]})
+
+            return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
