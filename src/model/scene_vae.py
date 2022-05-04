@@ -168,26 +168,26 @@ class MultiPairedDspritesVAE(pl.LightningModule):
 
             # Multiply on placeholder vector
             if self.global_step % 2 == 0:
-                latent_img *= masks[0]
+                latent_img2 *= masks[0]
                 latent_pair_img *= masks[1]
 
-                scene_latent = latent_img + latent_pair_img
+                scene_latent = latent_img2 + latent_pair_img
 
                 reconstructed_img = self.decoder(self.mlp(torch.cat([scene_latent, masks[0]], dim=1)))
                 reconstructed_pair_img = self.decoder(self.mlp(torch.cat([scene_latent, masks[1]], dim=1)))
             else:
-                latent_img *= masks[1]
+                latent_img2 *= masks[1]
                 latent_pair_img *= masks[0]
 
-                scene_latent = latent_img + latent_pair_img
+                scene_latent = latent_img2 + latent_pair_img
 
                 reconstructed_img = self.decoder(self.mlp(torch.cat([scene_latent, masks[1]], dim=1)))
                 reconstructed_pair_img = self.decoder(self.mlp(torch.cat([scene_latent, masks[0]], dim=1)))
 
-            img_loss = self.loss_f(reconstructed_img, img)
+            img_loss = self.loss_f(reconstructed_img, img2)
             pair_loss = self.loss_f(reconstructed_pair_img, pair_img)
             loss = img_loss + pair_loss
-            iou1 = iou_pytorch(reconstructed_img, img)
+            iou1 = iou_pytorch(reconstructed_img, img2)
             iou2 = iou_pytorch(reconstructed_pair_img, pair_img)
             iou = iou1 + iou2
             iou /= 2

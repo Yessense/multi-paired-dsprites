@@ -106,8 +106,6 @@ class MultiDisDsprites(IterableDataset):
         while True:
             # select random image
             n = random.randrange(0, self.dsprites_size)
-            while self.labels[n][0] != 2:
-                n = random.randrange(0, self.dsprites_size)
 
             obj = self.imgs[n]
 
@@ -171,8 +169,6 @@ class MultiDisDsprites(IterableDataset):
 
         # Generate img1
         n = random.randrange(0, self.dsprites_size)
-        while self.labels[n][0] != 2:
-            n = random.randrange(0, self.dsprites_size)
 
         img = self.imgs[n]
         labels = self.labels[n]
@@ -202,13 +198,10 @@ class MultiDisDsprites(IterableDataset):
             # Find other feature and add his number to pair_img_labels
             exchange_labels[feature_type] = True
 
-            if feature_type == 0:
-                other_feature = 2
-            else:
-                other_feature = random.choice(self.features_range[feature_type])
+            other_feature = random.choice(self.features_range[feature_type])
 
-                while other_feature == labels[feature_type]:
-                    other_feature = random.choice(self.features_range[feature_type])
+            while other_feature == labels[feature_type]:
+                other_feature = random.choice(self.features_range[feature_type])
 
             pair_img_labels[feature_type] = other_feature
 

@@ -23,7 +23,7 @@ parser = ArgumentParser()
 program_parser = parser.add_argument_group('program')
 program_parser.add_argument("--dataset_size", type=int, default=10 ** 6)
 program_parser.add_argument("--batch_size", type=int, default=128)
-program_parser.add_argument("--dataset_mode", type=str, default='two objects')
+program_parser.add_argument("--dataset_mode", type=str, default='exchange')
 program_parser.add_argument("--dataset_path", type=str,
                             default='/home/yessense/PycharmProjects/Multi-paired-dsprites/src/dataset/data/dsprites.npz')
 
