@@ -69,8 +69,8 @@ class MultiPairedDspritesVAE(pl.LightningModule):
         self.decoder = Decoder(latent_dim=self.latent_dim, image_size=self.image_size, n_features=self.n_features)
 
         # MLP if needed
-        if self.dataset_mode == 'two objects':
-            self.mlp = MLP(latent_dim=self.latent_dim)
+        # if self.dataset_mode == 'two objects':
+        self.mlp = MLP(latent_dim=self.latent_dim)
 
         # Feature placeholders
         self.feature_placeholders = feature_placeholders
@@ -162,20 +162,43 @@ class MultiPairedDspritesVAE(pl.LightningModule):
             latent_img2 = torch.sum(latent_img2, dim=1)
             latent_pair_img = torch.sum(latent_pair_img, dim=1)
 
+            # encode scene
+            batch_size = latent_img.shape[0]
+            masks = [mask.repeat(batch_size, 1).to(self.device) for mask in self.hd_obj_placeholders]
+
             # Multiply on placeholder vector
             if self.global_step % 2 == 0:
-                scene_latent = self.encode_scene(latent_img2, latent_pair_img)
+                latent_img *= masks[0]
+                latent_pair_img *= masks[1]
+
+                scene_latent = latent_img + latent_pair_img
+
+                reconstructed_img = self.decoder(self.mlp(torch.cat([scene_latent, masks[0]], dim=1)))
+                reconstructed_pair_img = self.decoder(self.mlp(torch.cat([scene_latent, masks[1]], dim=1)))
             else:
-                scene_latent = self.encode_scene(latent_pair_img, latent_img2)
+                latent_img *= masks[1]
+                latent_pair_img *= masks[0]
 
-            # Reconstuct scene
-            reconstruct = self.decoder(scene_latent)
+                scene_latent = latent_img + latent_pair_img
 
-            loss = self.loss_f(reconstruct, scene)
-            iou = iou_pytorch(reconstruct, scene)
+                reconstructed_img = self.decoder(self.mlp(torch.cat([scene_latent, masks[1]], dim=1)))
+                reconstructed_pair_img = self.decoder(self.mlp(torch.cat([scene_latent, masks[0]], dim=1)))
+
+            img_loss = self.loss_f(reconstructed_img, img)
+            pair_loss = self.loss_f(reconstructed_pair_img, pair_img)
+            loss = img_loss + pair_loss
+            iou1 = iou_pytorch(reconstructed_img, img)
+            iou2 = iou_pytorch(reconstructed_pair_img, pair_img)
+            iou = iou1 + iou2
+            iou /= 2
 
             # log training process
             self.log("BCE reconstruct", loss)
+            self.log("Image BCE loss", img_loss)
+            self.log("Pair image BCE loss", pair_loss)
+
+            self.log("IOU Image", iou1)
+            self.log("IOU Pair image", iou2)
             self.log("IOU", iou, prog_bar=True)
 
             # log images
@@ -187,7 +210,8 @@ class MultiPairedDspritesVAE(pl.LightningModule):
                         wandb.Image(donor[0], caption='Donor'),
                         wandb.Image(pair_img[0], caption='Pair image'),
                         wandb.Image(scene[0], caption='Scene'),
-                        wandb.Image(reconstruct[0], caption='Reconstruction'),
+                        wandb.Image(reconstructed_img[0], caption='Reconstructed image'),
+                        wandb.Image(reconstructed_pair_img[0], caption='Reconstructed pair image'),
                     ]})
             return loss
 
@@ -203,6 +227,7 @@ class MultiPairedDspritesVAE(pl.LightningModule):
             latent_img = torch.sum(latent_img, dim=1)
             latent_pair_img = torch.sum(latent_pair_img, dim=1)
 
+            # encode scene
             batch_size = latent_img.shape[0]
             masks = [mask.repeat(batch_size, 1).to(self.device) for mask in self.hd_obj_placeholders]
             latent_img *= masks[0]
